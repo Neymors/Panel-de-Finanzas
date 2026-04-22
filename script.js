@@ -110,14 +110,12 @@ async function fetchViaProxy(url, timeout = 10000) {
 
 // ─── DATA: MEP RATE ──────────────────────────────────────────
 async function fetchMepRate() {
-  // AL30 en pesos / AL30D en dólares = MEP implícito
   try {
     const data = await fetchViaProxy('https://api.bluelytics.com.ar/v2/latest');
     if (data && data.blue && data.blue.value_sell) {
       return parseFloat(data.blue.value_sell);
     }
   } catch {}
-  // fallback: dolarito API
   try {
     const data = await fetchViaProxy('https://dolarapi.com/v1/dolares/bolsa');
     if (data && data.venta) return parseFloat(data.venta);
@@ -129,7 +127,6 @@ async function fetchMepRate() {
 async function fetchMacroData() {
   let mep = null, riesgo = null;
 
-  // MEP
   try {
     const d = await fetchViaProxy('https://dolarapi.com/v1/dolares/bolsa');
     if (d && d.venta) mep = parseFloat(d.venta);
@@ -141,7 +138,6 @@ async function fetchMacroData() {
     } catch {}
   }
 
-  // Riesgo país (EMBI Argentina) vía ambito/api pública
   try {
     const d = await fetchViaProxy('https://api.argentinadatos.com/v1/finanzas/indices/riesgo-pais/ultimo');
     if (d && d.valor) riesgo = Math.round(parseFloat(d.valor));
@@ -151,8 +147,8 @@ async function fetchMacroData() {
 }
 
 function renderMacro(data, cached) {
-  const mepStr    = data.mep    ? fmt.mep(data.mep)          : '—';
-  const riesgoStr = data.riesgo ? String(data.riesgo)         : '—';
+  const mepStr    = data.mep    ? fmt.mep(data.mep)  : '—';
+  const riesgoStr = data.riesgo ? String(data.riesgo) : '—';
   const suffix    = cached ? ' <span style="opacity:.55">(cache)</span>' : '';
   el('sourceRow').innerHTML =
     `Dólar MEP: ${mepStr} · Riesgo País: ${riesgoStr}${suffix}`;
@@ -163,7 +159,7 @@ async function loadMacro() {
   if (cached) {
     renderMacro(cached, cached.cached);
     mepRate = cached.mep;
-    if (!cached.cached) return; // fresh
+    if (!cached.cached) return;
   }
   try {
     const fresh = await fetchMacroData();
@@ -178,17 +174,48 @@ async function loadMacro() {
 }
 
 // ─── DATA: ARGENTINA (RAVA) ───────────────────────────────────
+// Rava puede devolver números como strings con formato ARS: "1.234,56"
+function parseRavaNum(v) {
+  if (v === null || v === undefined || v === '') return NaN;
+  if (typeof v === 'number') return v;
+  // "1.234,56" → quitar puntos de miles, reemplazar coma decimal por punto
+  const s = String(v).trim().replace(/\./g, '').replace(',', '.');
+  return parseFloat(s);
+}
+
 async function fetchArPrice(ticker) {
-  // Rava Bursátil JSON endpoint
   const url = `https://www.rava.com/servicios/cotizaciones.php?pizarra=${encodeURIComponent(ticker)}&formato=JSON`;
   const data = await fetchViaProxy(url);
-  // Rava devuelve array o objeto
-  const item = Array.isArray(data) ? data[0] : (data.datos ? data.datos[0] : data);
-  if (!item) throw new Error('No data');
-  const price     = parseFloat(item.ult || item.ultimo || item.cierre || 0);
-  const prev      = parseFloat(item.ant || item.anterior || item.precierre || price);
-  const changeAbs = price - prev;
-  const change    = prev ? (changeAbs / prev) * 100 : 0;
+
+  // Rava puede devolver: array, { datos: [...] }, { raw: "..." }, u objeto directo
+  let item;
+  if (Array.isArray(data)) {
+    item = data[0];
+  } else if (data && Array.isArray(data.datos)) {
+    item = data.datos[0];
+  } else if (data && data.raw) {
+    try {
+      const parsed = JSON.parse(data.raw);
+      item = Array.isArray(parsed) ? parsed[0] : (parsed.datos ? parsed.datos[0] : parsed);
+    } catch { item = null; }
+  } else {
+    item = data;
+  }
+
+  if (!item || typeof item !== 'object') throw new Error(`Rava: sin datos para ${ticker}`);
+
+  const price = parseRavaNum(
+    item.ult ?? item.ultimo ?? item.cierre ?? item.px_ultimo ?? item.price ?? null
+  );
+  const prev  = parseRavaNum(
+    item.ant ?? item.anterior ?? item.precierre ?? item.px_anterior ?? item.prevclose ?? null
+  );
+
+  if (isNaN(price) || price <= 0) throw new Error(`Rava: precio inválido para ${ticker}`);
+
+  const prevSafe  = (!isNaN(prev) && prev > 0) ? prev : price;
+  const changeAbs = price - prevSafe;
+  const change    = prevSafe ? (changeAbs / prevSafe) * 100 : 0;
   return { price, change, changeAbs };
 }
 
@@ -244,7 +271,6 @@ async function fetchAllPrices(forceRefresh = false) {
       else                          data = await fetchCryptoPrice(p.ticker);
       result[p.ticker] = { ...data, cached: false };
     } catch {
-      // keep cached if available
       if (!result[p.ticker]) result[p.ticker] = { price: 0, change: 0, changeAbs: 0, cached: true };
     }
   });
@@ -263,7 +289,7 @@ function toUSD(valueInCurrency, currency) {
 }
 
 function calculatePortfolio(prices) {
-  let totalUSD   = 0;
+  let totalUSD     = 0;
   let totalCostUSD = 0;
   let todayAbsUSD  = 0;
   const rows = [];
@@ -279,12 +305,13 @@ function calculatePortfolio(prices) {
     const totalVal  = price * pos.quantity;
     const totalCost = pos.avgPrice * pos.quantity;
     const gainAbs   = totalVal - totalCost;
-    const gainPct   = totalCost > 0 ? (gainAbs / totalCost) * 100 : 0;
+    // Guard: evitar G/P % absurdos cuando avgPrice es 0 o casi 0
+    const gainPct   = (totalCost > 0.0001) ? (gainAbs / totalCost) * 100 : null;
     const dayAbsLocal = (info.changeAbs || 0) * pos.quantity;
 
-    const totalValUSD  = toUSD(totalVal, currency);
+    const totalValUSD   = toUSD(totalVal, currency);
     const totalCostUSD_ = toUSD(totalCost, currency);
-    const dayAbsUSD_   = toUSD(dayAbsLocal, currency);
+    const dayAbsUSD_    = toUSD(dayAbsLocal, currency);
 
     totalUSD     += totalValUSD;
     totalCostUSD += totalCostUSD_;
@@ -299,12 +326,11 @@ function calculatePortfolio(prices) {
     });
   }
 
-  const totalGainUSD  = totalUSD - totalCostUSD;
-  const totalGainPct  = totalCostUSD > 0 ? (totalGainUSD / totalCostUSD) * 100 : 0;
-  const todayPct      = (totalUSD - todayAbsUSD) > 0
+  const totalGainUSD = totalUSD - totalCostUSD;
+  const totalGainPct = totalCostUSD > 0.0001 ? (totalGainUSD / totalCostUSD) * 100 : 0;
+  const todayPct     = (totalUSD - todayAbsUSD) > 0
     ? (todayAbsUSD / (totalUSD - todayAbsUSD)) * 100 : 0;
 
-  // Best performer today
   const best = rows.reduce((a, b) => (b.change > (a?.change || -Infinity) ? b : a), null);
 
   return { rows, totalUSD, totalGainUSD, totalGainPct, todayAbsUSD, todayPct, best };
@@ -360,12 +386,11 @@ function renderTable(rows) {
       <td>${fmtPrice(r.avgPrice)}</td>
       <td>${fmtPrice(r.totalVal)}</td>
       <td class="${colorClass(r.gainAbs)}">${r.gainAbs >= 0 ? '+' : '−'}${fmtPrice(Math.abs(r.gainAbs))}</td>
-      <td class="${colorClass(r.gainPct)}">${fmt.pct(r.gainPct)}</td>
+      <td class="${r.gainPct !== null ? colorClass(r.gainPct) : ''}">${r.gainPct !== null ? fmt.pct(r.gainPct) : '—'}</td>
       <td><button class="del-btn" data-idx="${i}" title="Eliminar">✕</button></td>
     </tr>`;
   }).join('');
 
-  // Delete handlers
   tbody.querySelectorAll('.del-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const origIdx = positions.findIndex(p => p.ticker === rows[btn.dataset.idx].ticker);
@@ -398,7 +423,6 @@ function renderPie(rows) {
     }
   });
 
-  // Custom legend
   const legend = el('pieLegend');
   legend.innerHTML = labels.map((l, i) =>
     `<span><span class="leg-dot" style="background:${PIE_COLORS[i % PIE_COLORS.length]}"></span>${l}</span>`
@@ -424,11 +448,9 @@ function normalizeHistory(series) {
 }
 
 async function buildLineData(range) {
-  // Use BRK-B as benchmark
   const benchmark = await fetchHistoryYahoo('BRK-B', range);
   const benchNorm = normalizeHistory(benchmark);
 
-  // Portfolio: weight history by current allocation
   const total = positions.reduce((s, p) => {
     const price = priceCache[p.ticker]?.price || 0;
     return s + price * p.quantity;
@@ -436,14 +458,12 @@ async function buildLineData(range) {
 
   if (!total || !positions.length) return { portfolio: [], benchmark: benchNorm };
 
-  // Fetch histories for all positions
   const histories = await Promise.allSettled(
     positions
       .filter(p => p.type === 'global' || p.type === 'crypto')
       .map(p => fetchHistoryYahoo(p.ticker, range).then(h => ({ ticker: p.ticker, h })))
   );
 
-  // Build weighted portfolio series aligned to benchmark dates
   const dates = benchNorm.map(d => d.t);
   const portfolio = dates.map((t, i) => {
     let weightedPct = 0;
@@ -558,7 +578,6 @@ function savePositions() {
 function detectType(ticker) {
   const t = ticker.toUpperCase();
   if (COINGECKO_MAP[t]) return 'crypto';
-  // AR tickers: letras + números, típicamente 4-6 chars o bonos (AL30, GD35, etc.)
   if (/^[A-Z]{2,5}\d{0,2}[A-Z]?$/.test(t) && activeType === 'ar') return 'ar';
   return activeType;
 }
@@ -575,9 +594,9 @@ async function handleAdd() {
   const qty    = parseFloat(el('qtyInput').value);
   const avg    = parseFloat(el('avgInput').value);
 
-  if (!ticker)      return showError('Ingresá un ticker.');
-  if (isNaN(qty) || qty <= 0) return showError('Cantidad inválida.');
-  if (isNaN(avg) || avg <= 0) return showError('Precio promedio inválido.');
+  if (!ticker)                    return showError('Ingresá un ticker.');
+  if (isNaN(qty) || qty <= 0)     return showError('Cantidad inválida.');
+  if (isNaN(avg) || avg <= 0)     return showError('Precio promedio inválido. Ingresá el costo real de compra.');
   if (positions.find(p => p.ticker === ticker)) return showError('Ya existe esa posición.');
 
   showError('');
@@ -591,7 +610,6 @@ async function handleAdd() {
   positions.push({ ticker, type, quantity: qty, avgPrice: avg, currency });
   savePositions();
 
-  // Fetch price immediately
   await fetchAllPrices(false);
   renderUI(priceCache);
 
@@ -624,7 +642,6 @@ function scheduleRefresh() {
   const now    = new Date();
   const nyHour = parseInt(now.toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false }));
 
-  // Market sessions (NY time): open ~9:30, mid ~12:00, close ~16:00
   const targets = [9.5, 12, 16];
   const nowHour = nyHour + now.getMinutes() / 60;
   let nextMs    = null;
@@ -632,8 +649,7 @@ function scheduleRefresh() {
   for (const t of targets) {
     if (t > nowHour) { nextMs = (t - nowHour) * 3600 * 1000; break; }
   }
-  if (!nextMs) nextMs = (24 - nowHour + 9.5) * 3600 * 1000; // next day open
-  // Cap to 2h fallback
+  if (!nextMs) nextMs = (24 - nowHour + 9.5) * 3600 * 1000;
   const delay = Math.min(nextMs, 2 * 3600 * 1000);
   setTimeout(() => { refresh(true); scheduleRefresh(); }, delay);
 }
@@ -679,7 +695,6 @@ async function init() {
   setInterval(updateClocks, 1000);
   updateClocks();
 
-  // Load macro + prices
   await refresh(false);
   scheduleRefresh();
 }
