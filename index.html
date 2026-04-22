@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mi Portfolio - Acciones Argentina, Global y Crypto</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div class="container">
+
+    <div class="header">
+      <div>
+        <h1>Proof of Work</h1>
+        <div class="subtitle">
+          <div id="sourceRow"></div>
+        </div>
+      </div>
+      <div class="total-block">
+        <div class="total-label">Valor total</div>
+        <div class="total-val" id="totalVal">—</div>
+        <div class="clock-row">
+          <span id="clockAR"></span>
+          <span class="clock-sep">·</span>
+          <span id="clockNY"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="metrics">
+      <div class="metric">
+        <div class="metric-label">Ganancia total</div>
+        <div class="metric-val" id="totalGain">—</div>
+        <div class="metric-sub" id="totalGainPct">—</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Portfolio hoy</div>
+        <div class="metric-val" id="todayPct">—</div>
+        <div class="metric-sub" id="todayAbs">vs ayer</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Posiciones</div>
+        <div class="metric-val" id="posCount">0</div>
+        <div class="metric-sub">activas</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Mejor hoy</div>
+        <div class="metric-val" id="bestTicker">—</div>
+        <div class="metric-sub" id="bestPct">—</div>
+      </div>
+    </div>
+
+    <div class="charts-row">
+      <div class="card">
+        <div class="card-title">Distribución del portfolio</div>
+        <div style="position:relative;height:200px;">
+          <canvas id="pieChart" role="img" aria-label="Gráfico de torta con distribución del portfolio">Sin datos
+            aún.</canvas>
+        </div>
+        <div class="pie-legend" id="pieLegend"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Portfolio vs Benchmark</div>
+        <div class="range-row">
+          <button class="range-btn active" data-range="1M">1M</button>
+          <button class="range-btn" data-range="6M">6M</button>
+          <button class="range-btn" data-range="YTD">YTD</button>
+          <button class="range-btn" data-range="1Y">1Y</button>
+        </div>
+        <div style="position:relative;height:170px;">
+          <canvas id="lineChart" role="img" aria-label="Gráfico de líneas comparando portfolio vs benchmark">Sin datos
+            aún.</canvas>
+        </div>
+        <div class="line-legend">
+          <span><span class="leg-line" style="background:#378ADD;"></span>Mi portfolio</span>
+          <span><span class="leg-line leg-dashed"></span>Benchmark (MERVAL / BRK-B)</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="add-card">
+      <div class="card-title">Agregar posición</div>
+      <div class="type-toggle">
+        <button class="type-btn active" data-type="ar">Argentina (Rava)</button>
+        <button class="type-btn" data-type="global">Global (Yahoo)</button>
+        <button class="type-btn" data-type="crypto">Cripto</button>
+      </div>
+      <div class="form-row">
+        <input id="tickerInput" placeholder="Ticker argentino (ej: GGAL, AL30, S31O3)" autocomplete="off" spellcheck="false" />
+        <input id="qtyInput" placeholder="Cantidad" type="number" min="0" step="any" />
+        <input id="avgInput" placeholder="Precio promedio (USD o ARS)" type="number" min="0" step="any" />
+        <button class="add-btn" id="addBtn">+ Agregar</button>
+      </div>
+      <div class="error-msg" id="addError"></div>
+    </div>
+
+    <div class="table-card">
+      <div class="card-title">Mis posiciones</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Activo</th>
+              <th>Precio</th>
+              <th>% Día</th>
+              <th>Cantidad</th>
+              <th>P.M. compra</th>
+              <th>Valor total</th>
+              <th>G/P $</th>
+              <th>G/P %</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="posTable">
+            <tr class="empty-row">
+              <td colspan="9">Agregá tu primera posición arriba ↑</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+  <script src="/script.js"></script>
+</body>
+
+</html>
