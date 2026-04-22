@@ -1,9 +1,3 @@
-/* ============================================================
-   NETLIFY FUNCTION — netlify/functions/proxy.js
-   Server-side proxy para evitar CORS en APIs financieras.
-   Endpoint: /api/proxy?url=<encoded_url>
-   ============================================================ */
-
 'use strict';
 
 const ALLOWED_ORIGINS = [
@@ -29,17 +23,15 @@ function isAllowed(url) {
   }
 }
 
-exports.handler = async function(event) {
-  // CORS headers for browser
+exports.handler = async function (event) {
   const headers = {
-    'Access-Control-Allow-Origin':  '*',
+    'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
   };
 
-  // Preflight
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers, body: '' };
   }
@@ -48,7 +40,8 @@ exports.handler = async function(event) {
     return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
-  const targetUrl = (event.queryStringParameters || {}).url;
+  const params = event.queryStringParameters || {};
+  const targetUrl = params.url;
 
   if (!targetUrl) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing url parameter' }) };
@@ -62,14 +55,15 @@ exports.handler = async function(event) {
   }
 
   if (!isAllowed(decoded)) {
+    let hostname = decoded;
+    try { hostname = new URL(decoded).hostname; } catch {}
     return {
       statusCode: 403,
       headers,
-      body: JSON.stringify({ error: `Domain not allowed: ${new URL(decoded).hostname}` })
+      body: JSON.stringify({ error: `Domain not allowed: ${hostname}` }),
     };
   }
 
-  // Abort controller for timeout
   const controller = new AbortController();
   const tid = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -78,8 +72,8 @@ exports.handler = async function(event) {
       signal: controller.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; PortfolioDashboard/1.0)',
-        'Accept':     'application/json, text/html, */*',
-      }
+        'Accept': 'application/json, text/html, */*',
+      },
     });
     clearTimeout(tid);
 
@@ -87,7 +81,7 @@ exports.handler = async function(event) {
       return {
         statusCode: res.status,
         headers,
-        body: JSON.stringify({ error: `Upstream HTTP ${res.status}`, url: decoded })
+        body: JSON.stringify({ error: `Upstream HTTP ${res.status}`, url: decoded }),
       };
     }
 
@@ -98,13 +92,11 @@ exports.handler = async function(event) {
       const json = await res.json();
       body = JSON.stringify(json);
     } else {
-      // Try to parse as JSON anyway (some APIs return wrong content-type)
       const text = await res.text();
       try {
-        JSON.parse(text); // validate
+        JSON.parse(text);
         body = text;
       } catch {
-        // Return as plain text wrapped in JSON
         body = JSON.stringify({ raw: text });
       }
     }
@@ -118,14 +110,14 @@ exports.handler = async function(event) {
       return {
         statusCode: 504,
         headers,
-        body: JSON.stringify({ error: 'Upstream timeout', url: decoded })
+        body: JSON.stringify({ error: 'Upstream timeout', url: decoded }),
       };
     }
 
     return {
       statusCode: 502,
       headers,
-      body: JSON.stringify({ error: err.message || 'Proxy error', url: decoded })
+      body: JSON.stringify({ error: err.message || 'Proxy error', url: decoded }),
     };
   }
 };
