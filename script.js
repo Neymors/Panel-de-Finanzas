@@ -178,69 +178,20 @@ async function loadMacro() {
 }
 
 // ─── DATA: ARGENTINA (RAVA) ───────────────────────────────────
-// Rava devuelve números con formato ARS: "1.234,56" → hay que normalizarlos
-function parseRavaNum(v) {
-  if (v === null || v === undefined || v === '') return NaN;
-  if (typeof v === 'number') return v;
-  const s = String(v).trim().replace(/\./g, '').replace(',', '.');
-  return parseFloat(s);
-}
-
-async function fetchArPriceRava(ticker) {
-  const url = `https://www.rava.com/servicios/cotizaciones.php?pizarra=${encodeURIComponent(ticker)}&formato=JSON`;
+// ─── DATA: ARGENTINA (YAHOO FINANCE .BA) ─────────────────────
+// Rava eliminó su endpoint público (da 404 para todo).
+// Yahoo Finance cubre acciones (PAMP.BA, GGAL.BA) y bonos (AL41.BA, AL30.BA, GD30.BA).
+async function fetchArPrice(ticker) {
+  const yt  = ticker.includes('.') ? ticker : `${ticker}.BA`;
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yt)}?interval=1d&range=2d`;
   const data = await fetchViaProxy(url);
-
-  let item;
-  if (Array.isArray(data))                  item = data[0];
-  else if (data && Array.isArray(data.datos)) item = data.datos[0];
-  else if (data && data.raw) {
-    try {
-      const p = JSON.parse(data.raw);
-      item = Array.isArray(p) ? p[0] : (p.datos ? p.datos[0] : p);
-    } catch { item = null; }
-  } else {
-    item = data;
-  }
-
-  if (!item || typeof item !== 'object') throw new Error('Rava: sin datos');
-
-  const price = parseRavaNum(item.ult ?? item.ultimo ?? item.cierre ?? item.px_ultimo ?? null);
-  const prev  = parseRavaNum(item.ant ?? item.anterior ?? item.precierre ?? item.px_anterior ?? null);
-
-  if (isNaN(price) || price <= 0) throw new Error(`Rava: precio inválido para ${ticker}`);
-
-  const prevSafe  = (!isNaN(prev) && prev > 0) ? prev : price;
-  const changeAbs = price - prevSafe;
-  const change    = prevSafe ? (changeAbs / prevSafe) * 100 : 0;
-  return { price, change, changeAbs };
-}
-
-async function fetchArPriceYahoo(ticker) {
-  // Bonos AR cotizan en Yahoo como TICKER.BA (ej: AL41.BA, AL30.BA, GD30.BA)
-  const yahooTicker = ticker.includes('.') ? ticker : `${ticker}.BA`;
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker)}?interval=1d&range=2d`;
-  const data = await fetchViaProxy(url);
-  const meta  = data.chart.result[0].meta;
-  const price = meta.regularMarketPrice;
-  const prev  = meta.chartPreviousClose || meta.previousClose || price;
-  if (!price || price <= 0) throw new Error(`Yahoo: precio inválido para ${yahooTicker}`);
+  const meta = data?.chart?.result?.[0]?.meta;
+  if (!meta || !meta.regularMarketPrice) throw new Error(`Yahoo .BA: sin precio para ${yt}`);
+  const price     = meta.regularMarketPrice;
+  const prev      = meta.chartPreviousClose || meta.previousClose || price;
   const changeAbs = price - prev;
   const change    = prev ? (changeAbs / prev) * 100 : 0;
   return { price, change, changeAbs };
-}
-
-async function fetchArPrice(ticker) {
-  // 1º intento: Rava (funciona para acciones, a veces para bonos)
-  try {
-    return await fetchArPriceRava(ticker);
-  } catch (e1) {
-    // 2º intento: Yahoo Finance con sufijo .BA (funciona bien para bonos soberanos)
-    try {
-      return await fetchArPriceYahoo(ticker);
-    } catch (e2) {
-      throw new Error(`${ticker}: Rava (${e1.message}) y Yahoo (${e2.message}) fallaron`);
-    }
-  }
 }
 
 // ─── DATA: GLOBAL / CEDEAR (YAHOO FINANCE) ───────────────────
