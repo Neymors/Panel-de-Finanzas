@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Debug Rava</title>
+  <style>
+    body { font-family: monospace; padding: 2rem; background: #111; color: #eee; }
+    pre { background: #222; padding: 1rem; border-radius: 8px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+    button { padding: 8px 16px; margin: 4px; cursor: pointer; background: #333; color: #eee; border: 1px solid #555; border-radius: 6px; }
+    button:hover { background: #444; }
+    input { padding: 8px; background: #222; color: #eee; border: 1px solid #555; border-radius: 6px; font-family: monospace; font-size: 14px; width: 200px; }
+    h2 { color: #aaa; margin-bottom: 1rem; }
+    .ok { color: #7bc; }
+    .err { color: #f88; }
+  </style>
+</head>
+<body>
+  <h2>🔍 Debug Rava — respuesta cruda</h2>
+  <div>
+    <input id="ticker" value="AL41" placeholder="Ticker" />
+    <button onclick="fetchRava()">Fetch via proxy</button>
+    <button onclick="fetchRavaDirect()">Fetch DIRECTO (sin proxy)</button>
+  </div>
+  <br>
+  <div id="status"></div>
+  <pre id="out">Resultado acá...</pre>
+
+  <script>
+    const PROXY = '/api/proxy';
+
+    function show(data, isErr) {
+      const pre = document.getElementById('out');
+      pre.className = isErr ? 'err' : 'ok';
+      pre.textContent = JSON.stringify(data, null, 2);
+    }
+
+    function setStatus(msg) {
+      document.getElementById('status').textContent = msg;
+    }
+
+    async function fetchRava() {
+      const ticker = document.getElementById('ticker').value.trim().toUpperCase();
+      const url = `https://www.rava.com/servicios/cotizaciones.php?pizarra=${encodeURIComponent(ticker)}&formato=JSON`;
+      setStatus(`Fetching via proxy: ${url}`);
+      try {
+        const res = await fetch(`${PROXY}?url=${encodeURIComponent(url)}`);
+        const text = await res.text();
+        setStatus(`HTTP ${res.status} — intentando parsear JSON...`);
+        try {
+          const json = JSON.parse(text);
+          show({ _http_status: res.status, _parsed: json }, !res.ok);
+        } catch {
+          show({ _http_status: res.status, _raw_text: text }, true);
+        }
+      } catch (e) {
+        show({ _error: e.message }, true);
+      }
+    }
+
+    async function fetchRavaDirect() {
+      const ticker = document.getElementById('ticker').value.trim().toUpperCase();
+      const url = `https://www.rava.com/servicios/cotizaciones.php?pizarra=${encodeURIComponent(ticker)}&formato=JSON`;
+      setStatus(`Fetch DIRECTO (puede fallar por CORS): ${url}`);
+      try {
+        const res = await fetch(url);
+        const text = await res.text();
+        setStatus(`HTTP ${res.status}`);
+        try {
+          const json = JSON.parse(text);
+          show({ _http_status: res.status, _parsed: json }, !res.ok);
+        } catch {
+          show({ _http_status: res.status, _raw_text: text }, true);
+        }
+      } catch (e) {
+        show({ _error: e.message, _note: 'CORS bloqueó el fetch directo — normal' }, true);
+      }
+    }
+  </script>
+</body>
+</html>
