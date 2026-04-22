@@ -260,7 +260,9 @@ async function fetchAllPrices(forceRefresh = false) {
 // ─── CALCULATIONS ─────────────────────────────────────────────
 function toUSD(valueInCurrency, currency) {
   if (currency === 'USD') return valueInCurrency;
-  if (!mepRate || mepRate <= 0) return valueInCurrency / 1000; // rough fallback
+  // Sin MEP no podemos convertir ARS→USD correctamente; devolvemos null
+  // para que calculatePortfolio excluya esas filas del total hasta tener la tasa.
+  if (!mepRate || mepRate <= 0) return null;
   return valueInCurrency / mepRate;
 }
 
@@ -284,9 +286,15 @@ function calculatePortfolio(prices) {
     const gainPct   = (totalCost > 0.0001) ? (gainAbs / totalCost) * 100 : null;
     const dayAbsLocal = (info.changeAbs || 0) * pos.quantity;
 
-    const totalValUSD  = toUSD(totalVal, currency);
-    const totalCostUSD_ = toUSD(totalCost, currency);
-    const dayAbsUSD_   = toUSD(dayAbsLocal, currency);
+    const totalValUSD_raw   = toUSD(totalVal, currency);
+    const totalCostUSD_raw  = toUSD(totalCost, currency);
+    const dayAbsUSD_raw     = toUSD(dayAbsLocal, currency);
+
+    // null means mepRate not yet loaded — skip ARS rows from USD totals
+    const mepReady = totalValUSD_raw !== null;
+    const totalValUSD   = mepReady ? totalValUSD_raw   : 0;
+    const totalCostUSD_ = mepReady ? totalCostUSD_raw  : 0;
+    const dayAbsUSD_    = mepReady ? dayAbsUSD_raw     : 0;
 
     totalUSD     += totalValUSD;
     totalCostUSD += totalCostUSD_;
@@ -329,7 +337,8 @@ function renderMetrics(calc) {
   setVal('posCount', rows.length);
 
   if (best) {
-    setVal('bestTicker', best.ticker);
+    // Mostrar ticker limpio sin sufijo .BA
+    setVal('bestTicker', best.ticker.replace(/\.BA$/i, ''));
     setVal('bestPct', fmt.pct(best.change), colorClass(best.change));
   }
 }
@@ -350,7 +359,7 @@ function renderTable(rows) {
     return `
     <tr>
       <td>
-        <div class="ticker-name">${r.ticker}
+        <div class="ticker-name">${r.ticker.replace(/\.BA$/i, '')}
           <span class="type-badge">${r.type.toUpperCase()}</span>
           ${r.cached ? '<span class="src-badge">cache</span>' : ''}
         </div>
@@ -606,8 +615,15 @@ async function handleAdd() {
 
 // ─── REFRESH ──────────────────────────────────────────────────
 async function refresh(force = false) {
-  await loadMacro();
-  const prices = await fetchAllPrices(force);
+  // Cargar macro y precios en paralelo para mayor velocidad
+  const [_, prices] = await Promise.all([loadMacro(), fetchAllPrices(force)]);
+  // Si mepRate sigue null (fallo de red), intentar de nuevo una vez
+  if (!mepRate) {
+    try {
+      const m = await fetchMacroData();
+      if (m.mep) { mepRate = m.mep; setCachedMacro(m); renderMacro(m, false); }
+    } catch {}
+  }
   renderUI(prices);
 }
 
