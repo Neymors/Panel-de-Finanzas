@@ -30,8 +30,10 @@ let activeType   = 'ar';
 
 // ─── UTILS ───────────────────────────────────────────────────
 const fmt = {
-  usd:  v => '$' + Math.abs(v).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}),
-  ars:  v => '$' + Math.abs(v).toLocaleString('es-AR', {minimumFractionDigits:0, maximumFractionDigits:0}),
+  //usd:  v => '$' + Math.abs(v).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}),
+  //ars:  v => '$' + Math.abs(v).toLocaleString('es-AR', {minimumFractionDigits:0, maximumFractionDigits:0}),
+  usd: v => '$' + Math.abs(v).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}),
+  ars: v => '$' + Math.abs(v).toLocaleString('es-AR', {minimumFractionDigits:2, maximumFractionDigits:2}),
   pct:  v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(2) + '%',
   sign: v => v >= 0 ? '+' : '−',
   mep:  v => '$ ' + Math.round(v).toLocaleString('es-AR'),
@@ -213,7 +215,7 @@ const COINGECKO_MAP = {
   DOT:'polkadot', AVAX:'avalanche-2', LINK:'chainlink', UNI:'uniswap',
   ATOM:'cosmos', LTC:'litecoin', BCH:'bitcoin-cash', NEAR:'near',
   APT:'aptos', ARB:'arbitrum', OP:'optimism', INJ:'injective-protocol',
-  USDT:'tether', USDC:'usd-coin',
+  USDT:'tether', USDC:'usd-coin', WLFI: 'world-liberty-financial',
 };
 
 async function fetchCryptoPrice(ticker) {
