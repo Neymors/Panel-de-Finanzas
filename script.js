@@ -269,7 +269,7 @@ function toUSD(valueInCurrency, currency) {
 }
 
 function calculatePortfolio(prices) {
-  let totalUSD   = 0;
+  let totalUSD     = 0;
   let totalCostUSD = 0;
   let todayAbsUSD  = 0;
   const rows = [];
@@ -282,21 +282,35 @@ function calculatePortfolio(prices) {
     const change   = info.change || 0;
     const currency = pos.currency || (pos.type === 'crypto' ? 'USD' : pos.type === 'ar' ? 'ARS' : 'USD');
 
-    const totalVal  = price * pos.quantity;
-    const totalCost = pos.avgPrice * pos.quantity;
-    const gainAbs   = totalVal - totalCost;
-    const gainPct   = (totalCost > 0.0001) ? (gainAbs / totalCost) * 100 : null;
+    // ─── NUEVO: cálculo separado para AR ───────────────────────────
+    let totalVal, totalCost, gainAbs, gainPct, per;
+
+    if (pos.type === 'ar' && pos.tcCompra) {
+      const pmARS      = pos.avgPrice * pos.tcCompra;   // PM en ARS
+      totalVal         = price * pos.quantity;           // valor actual en ARS
+      totalCost        = pmARS * pos.quantity;           // costo en ARS
+      gainAbs          = totalVal - totalCost;
+      gainPct          = totalCost > 0 ? (gainAbs / totalCost) * 100 : null;
+      per              = pmARS > 0 ? price / pmARS : null;  // múltiplo real
+    } else {
+      totalVal  = price * pos.quantity;
+      totalCost = pos.avgPrice * pos.quantity;
+      gainAbs   = totalVal - totalCost;
+      gainPct   = totalCost > 0.0001 ? (gainAbs / totalCost) * 100 : null;
+      per       = null;
+    }
+    // ───────────────────────────────────────────────────────────────
+
     const dayAbsLocal = (info.changeAbs || 0) * pos.quantity;
 
-    const totalValUSD_raw   = toUSD(totalVal, currency);
-    const totalCostUSD_raw  = toUSD(totalCost, currency);
-    const dayAbsUSD_raw     = toUSD(dayAbsLocal, currency);
+    const totalValUSD_raw  = toUSD(totalVal, currency);
+    const totalCostUSD_raw = toUSD(totalCost, currency);
+    const dayAbsUSD_raw    = toUSD(dayAbsLocal, currency);
 
-    // null means mepRate not yet loaded — skip ARS rows from USD totals
-    const mepReady = totalValUSD_raw !== null;
-    const totalValUSD   = mepReady ? totalValUSD_raw   : 0;
-    const totalCostUSD_ = mepReady ? totalCostUSD_raw  : 0;
-    const dayAbsUSD_    = mepReady ? dayAbsUSD_raw     : 0;
+    const mepReady      = totalValUSD_raw !== null;
+    const totalValUSD   = mepReady ? totalValUSD_raw  : 0;
+    const totalCostUSD_ = mepReady ? totalCostUSD_raw : 0;
+    const dayAbsUSD_    = mepReady ? dayAbsUSD_raw    : 0;
 
     totalUSD     += totalValUSD;
     totalCostUSD += totalCostUSD_;
@@ -304,19 +318,18 @@ function calculatePortfolio(prices) {
 
     rows.push({
       ticker: pos.ticker, type: pos.type, quantity: pos.quantity,
-      avgPrice: pos.avgPrice, currency,
+      avgPrice: pos.avgPrice, tcCompra: pos.tcCompra || null, currency,
       price, change, changeAbs: info.changeAbs || 0,
-      totalVal, totalCost, gainAbs, gainPct,
+      totalVal, totalCost, gainAbs, gainPct, per,   // <-- per agregado
       totalValUSD, cached: info.cached
     });
   }
 
-  const totalGainUSD  = totalUSD - totalCostUSD;
-  const totalGainPct  = totalCostUSD > 0.0001 ? (totalGainUSD / totalCostUSD) * 100 : 0;
-  const todayPct      = (totalUSD - todayAbsUSD) > 0
+  const totalGainUSD = totalUSD - totalCostUSD;
+  const totalGainPct = totalCostUSD > 0.0001 ? (totalGainUSD / totalCostUSD) * 100 : 0;
+  const todayPct     = (totalUSD - todayAbsUSD) > 0
     ? (todayAbsUSD / (totalUSD - todayAbsUSD)) * 100 : 0;
 
-  // Best performer today
   const best = rows.reduce((a, b) => (b.change > (a?.change || -Infinity) ? b : a), null);
 
   return { rows, totalUSD, totalGainUSD, totalGainPct, todayAbsUSD, todayPct, best };
@@ -356,28 +369,33 @@ function renderTable(rows) {
   const currLabel = { ar: 'ARS', global: 'USD', crypto: 'USD' };
 
   tbody.innerHTML = rows.map((r, i) => {
-    const cur = r.currency;
-    const fmtPrice = cur === 'ARS' ? fmt.ars : fmt.usd;
-    return `
-    <tr>
-      <td>
-        <div class="ticker-name">${r.ticker.replace(/\.BA$/i, '')}
-          <span class="type-badge">${r.type.toUpperCase()}</span>
-          ${r.cached ? '<span class="src-badge">cache</span>' : ''}
-        </div>
-        <div class="ticker-sub">${currLabel[r.type] || cur}</div>
-      </td>
-      <td>${fmtPrice(r.price)}</td>
-      <td class="${colorClass(r.change)}">${fmt.pct(r.change)}</td>
-      <td>${r.quantity.toLocaleString('es-AR', {maximumFractionDigits:4})}</td>
-      <td>${fmtPrice(r.avgPrice)}</td>
-      <td>${fmtPrice(r.totalVal)}</td>
-      <td class="${colorClass(r.gainAbs)}">${r.gainAbs >= 0 ? '+' : '−'}${fmtPrice(Math.abs(r.gainAbs))}</td>
-      <td class="${r.gainPct !== null ? colorClass(r.gainPct) : ''}">${r.gainPct !== null ? fmt.pct(r.gainPct) : '—'}</td>
-      <td><button class="del-btn" data-idx="${i}" title="Eliminar">✕</button></td>
-    </tr>`;
-  }).join('');
+  const fmtPrice = r.currency === 'ARS' ? fmt.ars : fmt.usd;
+  const pmARS    = (r.type === 'ar' && r.tcCompra) ? r.avgPrice * r.tcCompra : null;
+  const perStr   = r.per != null ? r.per.toFixed(2) + 'x' : '—';
+  const tcStr    = r.tcCompra ? fmt.ars(r.tcCompra) : '—';
+  const pmARSStr = pmARS ? fmt.ars(pmARS) : '—';
 
+  return `
+  <tr>
+    <td>
+      <div class="ticker-name">${r.ticker.replace(/\.BA$/i, '')}
+        <span class="type-badge">${r.type.toUpperCase()}</span>
+        ${r.cached ? '<span class="src-badge">cache</span>' : ''}
+      </div>
+      <div class="ticker-sub">${r.currency}</div>
+    </td>
+    <td>${fmtPrice(r.price)}</td>
+    <td class="${colorClass(r.change)}">${fmt.pct(r.change)}</td>
+    <td>${r.quantity.toLocaleString('es-AR', {maximumFractionDigits:4})}</td>
+    <td>${fmt.usd(r.avgPrice)}</td>
+    <td>${tcStr}</td>
+    <td>${pmARSStr}</td>
+    <td>${fmtPrice(r.totalVal)}</td>
+    <td class="${colorClass(r.gainAbs)}">${r.gainAbs >= 0 ? '+' : '−'}${fmtPrice(Math.abs(r.gainAbs))}</td>
+    <td class="${r.per != null ? (r.per >= 1 ? 'pos' : 'neg') : ''}">${perStr}</td>
+    <td><button class="del-btn" data-idx="${i}" title="Eliminar">✕</button></td>
+  </tr>`;
+}).join('');
   // Delete handlers
   tbody.querySelectorAll('.del-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -587,10 +605,16 @@ async function handleAdd() {
   const ticker = el('tickerInput').value.trim().toUpperCase();
   const qty    = parseFloat(el('qtyInput').value);
   const avg    = parseFloat(el('avgInput').value);
+  const tc     = parseFloat(el('tcInput').value) ;
 
   if (!ticker)      return showError('Ingresá un ticker.');
   if (isNaN(qty) || qty <= 0) return showError('Cantidad inválida.');
   if (isNaN(avg) || avg <= 0) return showError('Precio promedio inválido.');
+
+  const type     = detectType(ticker);
+
+  if (type === 'ar' && (isNaN(tc) || tc <= 0)) return showError('Ingresá el TC de compra.');
+
   if (positions.find(p => p.ticker === ticker)) return showError('Ya existe esa posición.');
 
   showError('');
@@ -598,7 +622,6 @@ async function handleAdd() {
   btn.disabled = true;
   btn.textContent = 'Cargando…';
 
-  const type     = detectType(ticker);
   const currency = type === 'ar' ? 'ARS' : 'USD';
 
   positions.push({ ticker, type, quantity: qty, avgPrice: avg, currency });
@@ -611,6 +634,7 @@ async function handleAdd() {
   el('tickerInput').value = '';
   el('qtyInput').value    = '';
   el('avgInput').value    = '';
+  el('tcInput').value     = '';
   btn.disabled  = false;
   btn.textContent = '+ Agregar';
 }

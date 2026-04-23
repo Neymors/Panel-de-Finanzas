@@ -91,9 +91,10 @@
         <button class="type-btn" data-type="crypto">Cripto</button>
       </div>
       <div class="form-row">
-        <input id="tickerInput" placeholder="Ticker argentino (ej: GGAL, AL30, S31O3)" autocomplete="off" spellcheck="false" />
+        <input id="tickerInput" placeholder="Ticker argentino (ej: GGAL, AL30)" autocomplete="off" spellcheck="false" />
         <input id="qtyInput" placeholder="Cantidad" type="number" min="0" step="any" />
-        <input id="avgInput" placeholder="Precio promedio (USD o ARS)" type="number" min="0" step="any" />
+        <input id="avgInput" placeholder="P.M. USD" type="number" min="0" step="any" />
+        <input id="tcInput" placeholder="TC compra (ARS/USD)" type="number" min="0" step="any" />
         <button class="add-btn" id="addBtn">+ Agregar</button>
       </div>
       <div class="error-msg" id="addError"></div>
@@ -109,8 +110,10 @@
               <th>Precio</th>
               <th>% Día</th>
               <th>Cantidad</th>
-              <th>P.M. compra</th>
-              <th>Valor total</th>
+              <th>P.M. USD</th>
+              <th>TC Compra</th>
+              <th>P.M. ARS</th>
+              <th>Valor Total</th>
               <th>G/P $</th>
               <th>PER</th>
               <th></th>
